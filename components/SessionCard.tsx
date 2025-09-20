@@ -1,71 +1,57 @@
 'use client'
 
 import { useState } from 'react'
-import { ethers } from 'ethers'
-import { getContract, markAttendance } from '@/lib/contract'
-import type { AttendanceSession, TransactionStatus } from '@/types'
+import { markAttendanceOnChain } from '@/lib/contract'
+import type { SessionCardProps, TransactionStatus } from '@/types'
 
-interface SessionCardProps {
-  session: AttendanceSession;
-}
-
-export default function SessionCard({ session }: SessionCardProps) {
+export default function SessionCard({ session, onMarkAttendance, canMarkAttendance = true }: SessionCardProps) {
   const [txStatus, setTxStatus] = useState<TransactionStatus>({ status: 'idle' })
 
   const handleMarkAttendance = async () => {
     if (!session.metadata.session_id) {
-      setTxStatus({
-        status: 'error',
-        message: 'Session not yet active on blockchain'
-      })
+      alert('Session not yet active on blockchain')
       return
     }
 
-    if (!window.ethereum) {
-      setTxStatus({
-        status: 'error',
-        message: 'MetaMask not detected'
-      })
+    // Check if MetaMask is available
+    if (typeof window === 'undefined' || !window.ethereum) {
+      alert('MetaMask is required to mark attendance')
       return
     }
 
     setTxStatus({ status: 'pending', message: 'Marking attendance...' })
 
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum)
-      const signer = await provider.getSigner()
-      const contract = await getContract(signer)
-      
-      const tx = await markAttendance(contract, session.metadata.session_id)
-      
-      setTxStatus({ 
-        status: 'pending', 
-        message: 'Transaction submitted. Waiting for confirmation...',
-        hash: tx.hash 
+      // Check if wallet is connected
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' })
+      if (accounts.length === 0) {
+        throw new Error('Please connect your wallet first')
+      }
+
+      // Mark attendance on blockchain
+      const result = await markAttendanceOnChain(session.metadata.session_id)
+
+      setTxStatus({
+        status: 'success',
+        message: 'Attendance marked successfully!',
+        hash: result.transactionHash
       })
 
-      const receipt = await tx.wait()
-      
-      if (receipt) {
-        setTxStatus({
-          status: 'success',
-          message: 'Attendance marked successfully!',
-          hash: tx.hash
-        })
+      // Call optional callback
+      if (onMarkAttendance) {
+        onMarkAttendance(session.metadata.session_id)
       }
+
+      // Auto-clear success message
+      setTimeout(() => {
+        setTxStatus({ status: 'idle' })
+      }, 3000)
+
     } catch (error: any) {
       console.error('Error marking attendance:', error)
-      let errorMessage = 'Failed to mark attendance'
-      
-      if (error.message.includes('already marked')) {
-        errorMessage = 'You have already marked attendance for this session'
-      } else if (error.message.includes('not active')) {
-        errorMessage = 'This session is not currently active'
-      }
-      
       setTxStatus({
         status: 'error',
-        message: errorMessage
+        message: error.message || 'Failed to mark attendance'
       })
     }
   }
@@ -73,7 +59,7 @@ export default function SessionCard({ session }: SessionCardProps) {
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
-      month: 'long',
+      month: 'short',
       day: 'numeric',
     })
   }
@@ -81,11 +67,11 @@ export default function SessionCard({ session }: SessionCardProps) {
   const getStatusBadgeClass = (status: string) => {
     switch (status.toLowerCase()) {
       case 'active':
-        return 'status-badge status-active'
+        return 'status-badge status-success'
+      case 'closed':
+        return 'status-badge status-error'
       case 'pending':
         return 'status-badge status-pending'
-      case 'closed':
-        return 'status-badge status-closed'
       default:
         return 'status-badge status-pending'
     }
@@ -94,103 +80,94 @@ export default function SessionCard({ session }: SessionCardProps) {
   return (
     <div className="card">
       <div className="flex items-start justify-between mb-4">
-        <div>
-          <h3 className="text-lg font-semibold mb-2">{session.title}</h3>
-          <div className="flex items-center space-x-4 text-sm text-slate-400">
-            <span>📅 {formatDate(session.metadata.session_date)}</span>
+        <div className="flex-1">
+          <div className="flex items-center space-x-3 mb-2">
+            <h3 className="text-lg font-semibold">{session.metadata.session_name}</h3>
             <span className={getStatusBadgeClass(session.metadata.status.value)}>
               {session.metadata.status.value}
             </span>
           </div>
+          <p className="text-sm text-slate-400">
+            {formatDate(session.metadata.session_date)}
+          </p>
         </div>
-        
-        {session.metadata.status.value === 'Active' && session.metadata.session_id && (
-          <button
-            onClick={handleMarkAttendance}
-            disabled={txStatus.status === 'pending'}
-            className="btn btn-primary"
-          >
-            {txStatus.status === 'pending' ? (
-              <div className="flex items-center space-x-2">
-                <div className="spinner"></div>
-                <span>Marking...</span>
-              </div>
-            ) : (
-              '✓ Mark Attendance'
-            )}
-          </button>
+
+        {session.metadata.session_id && (
+          <div className="text-right">
+            <label className="label text-xs text-slate-400">Session ID</label>
+            <div className="text-lg font-bold text-primary">#{session.metadata.session_id}</div>
+          </div>
         )}
       </div>
 
       {session.metadata.description && (
-        <p className="text-slate-300 mb-4">{session.metadata.description}</p>
+        <p className="text-sm text-slate-300 mb-4">
+          {session.metadata.description}
+        </p>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 text-sm">
         <div>
-          <label className="label text-xs text-slate-400">Creator Address</label>
+          <label className="label text-xs text-slate-400">Creator</label>
           <div className="eth-address bg-slate-800 rounded px-2 py-1 break-all">
             {session.metadata.creator_address}
           </div>
         </div>
-        
-        {session.metadata.session_id && (
+
+        {session.metadata.transaction_hash && (
           <div>
-            <label className="label text-xs text-slate-400">Blockchain Session ID</label>
-            <div className="text-sm bg-slate-800 rounded px-2 py-1">
-              #{session.metadata.session_id}
+            <label className="label text-xs text-slate-400">Transaction</label>
+            <div className="tx-hash bg-slate-800 rounded px-2 py-1 break-all">
+              {session.metadata.transaction_hash.slice(0, 10)}...{session.metadata.transaction_hash.slice(-8)}
             </div>
           </div>
         )}
       </div>
 
-      {session.metadata.transaction_hash && (
-        <div className="mt-4">
-          <label className="label text-xs text-slate-400">Creation Transaction</label>
-          <div className="tx-hash bg-slate-800 rounded px-2 py-1 break-all">
-            {session.metadata.transaction_hash}
-          </div>
-        </div>
-      )}
+      {/* Mark Attendance Button */}
+      {canMarkAttendance && session.metadata.status.value === 'Active' && session.metadata.session_id && (
+        <div className="pt-4 border-t border-border">
+          <button
+            onClick={handleMarkAttendance}
+            disabled={txStatus.status === 'pending'}
+            className="btn-secondary w-full"
+          >
+            {txStatus.status === 'pending' ? (
+              <>
+                <svg className="animate-spin -ml-1 mr-3 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Marking...
+              </>
+            ) : (
+              '✋ Mark Attendance'
+            )}
+          </button>
 
-      {/* Transaction Status */}
-      {txStatus.status !== 'idle' && (
-        <div className="mt-4">
-          {txStatus.status === 'pending' && (
-            <div className="bg-yellow-900/20 border border-yellow-500/50 rounded-lg p-3">
-              <div className="flex items-center space-x-2">
-                <div className="spinner"></div>
-                <span className="text-yellow-400">{txStatus.message}</span>
-              </div>
+          {/* Transaction Status */}
+          {txStatus.status !== 'idle' && (
+            <div className={`mt-2 p-2 rounded text-xs ${
+              txStatus.status === 'success' ? 'text-success bg-success/10' :
+              txStatus.status === 'error' ? 'text-error bg-error/10' :
+              'text-warning bg-warning/10'
+            }`}>
+              <p>{txStatus.message}</p>
               {txStatus.hash && (
-                <p className="tx-hash text-yellow-300 mt-2 break-all">
-                  TX: {txStatus.hash}
+                <p className="mt-1 opacity-70">
+                  TX: {txStatus.hash.slice(0, 8)}...{txStatus.hash.slice(-6)}
                 </p>
               )}
             </div>
           )}
+        </div>
+      )}
 
-          {txStatus.status === 'success' && (
-            <div className="bg-green-900/20 border border-green-500/50 rounded-lg p-3">
-              <div className="flex items-center space-x-2">
-                <svg className="w-5 h-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                <span className="text-green-400">{txStatus.message}</span>
-              </div>
-            </div>
-          )}
-
-          {txStatus.status === 'error' && (
-            <div className="bg-red-900/20 border border-red-500/50 rounded-lg p-3">
-              <div className="flex items-center space-x-2">
-                <svg className="w-5 h-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-                <span className="text-red-400">{txStatus.message}</span>
-              </div>
-            </div>
-          )}
+      {session.metadata.status.value === 'Pending' && (
+        <div className="pt-4 border-t border-border">
+          <div className="text-center text-sm text-slate-400">
+            ⏳ Session pending blockchain confirmation
+          </div>
         </div>
       )}
     </div>

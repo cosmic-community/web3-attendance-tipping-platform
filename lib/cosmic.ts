@@ -1,4 +1,5 @@
 import { createBucketClient } from '@cosmicjs/sdk'
+import type { AttendanceSession, Attendee, Tip } from '@/types'
 
 export const cosmic = createBucketClient({
   bucketSlug: process.env.COSMIC_BUCKET_SLUG as string,
@@ -12,14 +13,14 @@ function hasStatus(error: unknown): error is { status: number } {
 }
 
 // Fetch all attendance sessions
-export async function getAttendanceSessions() {
+export async function getAttendanceSessions(): Promise<AttendanceSession[]> {
   try {
     const response = await cosmic.objects
       .find({ type: 'attendance-sessions' })
       .props(['id', 'title', 'slug', 'metadata'])
       .depth(1);
     
-    return response.objects.sort((a, b) => {
+    return response.objects.sort((a: AttendanceSession, b: AttendanceSession) => {
       const dateA = new Date(a.metadata?.session_date || '').getTime();
       const dateB = new Date(b.metadata?.session_date || '').getTime();
       return dateB - dateA; // Newest first
@@ -33,14 +34,14 @@ export async function getAttendanceSessions() {
 }
 
 // Fetch all attendees
-export async function getAttendees() {
+export async function getAttendees(): Promise<Attendee[]> {
   try {
     const response = await cosmic.objects
       .find({ type: 'attendees' })
       .props(['id', 'title', 'slug', 'metadata'])
       .depth(1);
     
-    return response.objects.sort((a, b) => {
+    return response.objects.sort((a: Attendee, b: Attendee) => {
       const attendanceA = a.metadata?.total_attendance || 0;
       const attendanceB = b.metadata?.total_attendance || 0;
       return attendanceB - attendanceA; // Most active first
@@ -54,14 +55,14 @@ export async function getAttendees() {
 }
 
 // Fetch all tips
-export async function getTips() {
+export async function getTips(): Promise<Tip[]> {
   try {
     const response = await cosmic.objects
       .find({ type: 'tips' })
       .props(['id', 'title', 'slug', 'metadata'])
       .depth(1);
     
-    return response.objects.sort((a, b) => {
+    return response.objects.sort((a: Tip, b: Tip) => {
       const dateA = new Date(a.metadata?.tip_date || '').getTime();
       const dateB = new Date(b.metadata?.tip_date || '').getTime();
       return dateB - dateA; // Newest first

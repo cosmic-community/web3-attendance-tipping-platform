@@ -1,227 +1,178 @@
 'use client'
 
 import { useState } from 'react'
-import { ethers } from 'ethers'
-import { TIP_RECIPIENT_ADDRESS, sendTip } from '@/lib/contract'
+import { sendTipOnChain } from '@/lib/contract'
 import { createTipRecord } from '@/lib/cosmic'
-import type { TransactionStatus } from '@/types'
+import type { TipFormData, TransactionStatus } from '@/types'
 
 export default function TipForm() {
-  const [amount, setAmount] = useState('')
-  const [recipientAddress, setRecipientAddress] = useState(TIP_RECIPIENT_ADDRESS)
+  const [formData, setFormData] = useState<TipFormData>({
+    amount: '',
+    recipientAddress: ''
+  })
   const [txStatus, setTxStatus] = useState<TransactionStatus>({ status: 'idle' })
 
-  const handleSendTip = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    if (!amount || parseFloat(amount) <= 0) {
-      setTxStatus({
-        status: 'error',
-        message: 'Please enter a valid tip amount'
-      })
+
+    if (!formData.amount || !formData.recipientAddress) {
+      alert('Please fill in all fields')
       return
     }
 
-    if (!ethers.isAddress(recipientAddress)) {
-      setTxStatus({
-        status: 'error',
-        message: 'Please enter a valid recipient address'
-      })
+    const amount = parseFloat(formData.amount)
+    if (amount <= 0) {
+      alert('Please enter a valid amount')
       return
     }
 
-    if (!window.ethereum) {
-      setTxStatus({
-        status: 'error',
-        message: 'MetaMask not detected. Please install MetaMask.'
-      })
+    // Check if MetaMask is available
+    if (typeof window === 'undefined' || !window.ethereum) {
+      alert('MetaMask is required to send tips')
       return
     }
 
-    setTxStatus({ status: 'pending', message: 'Preparing tip transaction...' })
+    setTxStatus({ status: 'pending', message: 'Sending tip...' })
 
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum)
-      const signer = await provider.getSigner()
-      const userAddress = await signer.getAddress()
-      
-      // Check if user has sufficient balance
-      const balance = await provider.getBalance(userAddress)
-      const tipAmount = ethers.parseEther(amount)
-      
-      if (balance < tipAmount) {
-        setTxStatus({
-          status: 'error',
-          message: 'Insufficient balance for this tip amount'
-        })
-        return
+      // Check if wallet is connected
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' })
+      if (accounts.length === 0) {
+        throw new Error('Please connect your wallet first')
       }
-      
-      setTxStatus({ status: 'pending', message: 'Sending tip...' })
-      
-      // Send tip transaction
-      const tx = await sendTip(signer, recipientAddress, amount)
-      
-      setTxStatus({ 
-        status: 'pending', 
-        message: 'Transaction submitted. Waiting for confirmation...',
-        hash: tx.hash 
+
+      const senderAddress = accounts[0]
+
+      // Send tip on blockchain
+      const result = await sendTipOnChain(formData.recipientAddress, formData.amount)
+
+      // Calculate gas fee
+      const gasFeeWei = BigInt(result.gasUsed) * BigInt(result.effectiveGasPrice)
+      const gasFeeEth = (Number(gasFeeWei) / 1e18).toFixed(6)
+
+      // Create tip record in Cosmic CMS
+      await createTipRecord(
+        formData.amount,
+        senderAddress,
+        formData.recipientAddress,
+        result.transactionHash
+      )
+
+      setTxStatus({
+        status: 'success',
+        message: `Tip sent successfully! Gas fee: ${gasFeeEth} ETH`,
+        hash: result.transactionHash
       })
 
-      // Wait for transaction to be mined
-      const receipt = await tx.wait()
-      
-      if (receipt) {
-        // Calculate gas fee
-        const gasUsed = receipt.gasUsed
-        const gasPrice = receipt.gasPrice || tx.gasPrice || BigInt(0)
-        const gasFee = ethers.formatEther(gasUsed * gasPrice)
+      // Reset form
+      setFormData({ amount: '', recipientAddress: '' })
 
-        // Create record in Cosmic CMS
-        await createTipRecord(
-          amount,
-          userAddress,
-          recipientAddress,
-          tx.hash
-        )
+      // Auto-clear success message
+      setTimeout(() => {
+        setTxStatus({ status: 'idle' })
+      }, 5000)
 
-        setTxStatus({
-          status: 'success',
-          message: `Tip of ${amount} ETH sent successfully! Gas fee: ${parseFloat(gasFee).toFixed(6)} ETH`,
-          hash: tx.hash
-        })
-
-        // Reset form
-        setAmount('')
-      }
     } catch (error: any) {
       console.error('Error sending tip:', error)
-      let errorMessage = 'Failed to send tip'
-      
-      if (error.code === 'ACTION_REJECTED') {
-        errorMessage = 'Transaction was cancelled by user'
-      } else if (error.message.includes('insufficient funds')) {
-        errorMessage = 'Insufficient funds for transaction'
-      } else if (error.message.includes('gas')) {
-        errorMessage = 'Gas estimation failed. Please try again.'
-      }
-      
       setTxStatus({
         status: 'error',
-        message: errorMessage
+        message: error.message || 'Failed to send tip'
       })
     }
   }
 
+  const getStatusColor = () => {
+    switch (txStatus.status) {
+      case 'pending': return 'text-warning bg-warning/10'
+      case 'success': return 'text-success bg-success/10'
+      case 'error': return 'text-error bg-error/10'
+      default: return ''
+    }
+  }
+
   return (
-    <div className="card">
-      <h2 className="text-xl font-semibold mb-4">Send ETH Tip</h2>
+    <section className="card">
+      <h2 className="text-2xl font-bold mb-4">Send ETH Tip</h2>
       
-      <form onSubmit={handleSendTip} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="tipAmount" className="label">
-            Tip Amount (ETH) *
-          </label>
-          <input
-            id="tipAmount"
-            type="number"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="input"
-            placeholder="0.01"
-            step="0.001"
-            min="0"
-            required
-          />
+          <label className="label">Amount (ETH) *</label>
+          <div className="relative">
+            <input
+              type="number"
+              value={formData.amount}
+              onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
+              className="input pr-12"
+              placeholder="0.01"
+              step="0.001"
+              min="0"
+              required
+            />
+            <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 text-sm">
+              ETH
+            </div>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">
+            Minimum: 0.001 ETH (plus gas fees)
+          </p>
         </div>
 
         <div>
-          <label htmlFor="recipientAddress" className="label">
-            Recipient Address *
-          </label>
+          <label className="label">Recipient Address *</label>
           <input
-            id="recipientAddress"
             type="text"
-            value={recipientAddress}
-            onChange={(e) => setRecipientAddress(e.target.value)}
-            className="input eth-address"
-            placeholder="0x..."
+            value={formData.recipientAddress}
+            onChange={(e) => setFormData(prev => ({ ...prev, recipientAddress: e.target.value }))}
+            className="input font-mono text-sm"
+            placeholder="0x1234...abcd"
+            pattern="^0x[a-fA-F0-9]{40}$"
             required
           />
           <p className="text-xs text-slate-400 mt-1">
-            Default recipient is the platform organizer
+            Enter a valid Ethereum address
           </p>
         </div>
 
         <button
           type="submit"
           disabled={txStatus.status === 'pending'}
-          className="btn btn-primary w-full"
+          className="btn-primary w-full"
         >
           {txStatus.status === 'pending' ? (
-            <div className="flex items-center justify-center space-x-2">
-              <div className="spinner"></div>
-              <span>Sending...</span>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center space-x-2">
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z" />
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.51-1.31c-.562-.649-1.413-1.076-2.353-1.253V5z" clipRule="evenodd" />
+            <>
+              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              <span>Send Tip</span>
-            </div>
+              Sending Tip...
+            </>
+          ) : (
+            '💰 Send Tip'
           )}
         </button>
+
+        {/* Transaction Status */}
+        {txStatus.status !== 'idle' && (
+          <div className={`p-3 rounded text-sm ${getStatusColor()}`}>
+            <p>{txStatus.message}</p>
+            {txStatus.hash && (
+              <p className="mt-1 text-xs opacity-70">
+                TX: {txStatus.hash.slice(0, 10)}...{txStatus.hash.slice(-8)}
+              </p>
+            )}
+          </div>
+        )}
       </form>
 
-      {/* Transaction Status */}
-      {txStatus.status !== 'idle' && (
-        <div className="mt-4">
-          {txStatus.status === 'pending' && (
-            <div className="bg-yellow-900/20 border border-yellow-500/50 rounded-lg p-3">
-              <div className="flex items-center space-x-2">
-                <div className="spinner"></div>
-                <span className="text-yellow-400">{txStatus.message}</span>
-              </div>
-              {txStatus.hash && (
-                <p className="tx-hash text-yellow-300 mt-2 break-all">
-                  TX: {txStatus.hash}
-                </p>
-              )}
-            </div>
-          )}
-
-          {txStatus.status === 'success' && (
-            <div className="bg-green-900/20 border border-green-500/50 rounded-lg p-3">
-              <div className="flex items-center space-x-2">
-                <svg className="w-5 h-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                <div className="text-green-400">
-                  <p>{txStatus.message}</p>
-                </div>
-              </div>
-              {txStatus.hash && (
-                <p className="tx-hash text-green-300 mt-2 break-all">
-                  TX: {txStatus.hash}
-                </p>
-              )}
-            </div>
-          )}
-
-          {txStatus.status === 'error' && (
-            <div className="bg-red-900/20 border border-red-500/50 rounded-lg p-3">
-              <div className="flex items-center space-x-2">
-                <svg className="w-5 h-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-                <span className="text-red-400">{txStatus.message}</span>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+      <div className="mt-6 p-4 bg-slate-800 rounded text-sm">
+        <h4 className="font-semibold mb-2">💡 Tip Guidelines:</h4>
+        <ul className="space-y-1 text-slate-300 text-xs">
+          <li>• Tips are sent directly to the recipient's wallet</li>
+          <li>• Gas fees are additional to the tip amount</li>
+          <li>• All transactions are recorded on the blockchain</li>
+          <li>• Tips can be sent to session organizers or any ETH address</li>
+        </ul>
+      </div>
+    </section>
   )
 }

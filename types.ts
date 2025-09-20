@@ -1,5 +1,17 @@
 import { ethers } from 'ethers'
 
+// Extend Window interface for MetaMask ethereum object
+declare global {
+  interface Window {
+    ethereum?: {
+      request: (args: { method: string; params?: any[] }) => Promise<any>;
+      on: (event: string, callback: (...args: any[]) => void) => void;
+      removeListener: (event: string, callback: (...args: any[]) => void) => void;
+      isMetaMask?: boolean;
+    };
+  }
+}
+
 // Base Cosmic object interface
 interface CosmicObject {
   id: string;
@@ -142,7 +154,7 @@ export function isTip(obj: CosmicObject): obj is Tip {
   return obj.type === 'tips';
 }
 
-// Utility types
-export type OptionalMetadata<T> = Partial<T['metadata']>;
+// Utility types with proper constraint
+export type OptionalMetadata<T extends { metadata: any }> = Partial<T['metadata']>;
 export type CreateSessionData = Omit<AttendanceSession, 'id' | 'created_at' | 'modified_at'>;
 export type CreateTipData = Omit<Tip, 'id' | 'created_at' | 'modified_at'>;

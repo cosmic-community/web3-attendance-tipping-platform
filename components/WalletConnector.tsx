@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ethers } from 'ethers'
+import { getCurrentWalletAddress, getWalletBalance } from '@/lib/contract'
 import type { WalletState } from '@/types'
 
 export default function WalletConnector() {
@@ -9,73 +9,67 @@ export default function WalletConnector() {
     isConnected: false,
     address: null,
     balance: null,
-    chainId: null,
+    chainId: null
   })
   const [isConnecting, setIsConnecting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
-  // Check if wallet is already connected on load
+  // Check if wallet is already connected on page load
   useEffect(() => {
-    checkWalletConnection()
+    checkConnection()
+    
+    // Listen for account changes
+    if (typeof window !== 'undefined' && window.ethereum) {
+      const handleAccountsChanged = (accounts: string[]) => {
+        if (accounts.length === 0) {
+          disconnectWallet()
+        } else {
+          updateWalletInfo()
+        }
+      }
+
+      const handleChainChanged = () => {
+        updateWalletInfo()
+      }
+
+      window.ethereum.on('accountsChanged', handleAccountsChanged)
+      window.ethereum.on('chainChanged', handleChainChanged)
+
+      return () => {
+        if (window.ethereum) {
+          window.ethereum.removeListener('accountsChanged', handleAccountsChanged)
+          window.ethereum.removeListener('chainChanged', handleChainChanged)
+        }
+      }
+    }
   }, [])
 
-  const checkWalletConnection = async () => {
+  const checkConnection = async () => {
     if (typeof window !== 'undefined' && window.ethereum) {
       try {
-        const provider = new ethers.BrowserProvider(window.ethereum)
-        const accounts = await provider.listAccounts()
-        
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' })
         if (accounts.length > 0) {
-          const signer = await provider.getSigner()
-          const address = await signer.getAddress()
-          const balance = await provider.getBalance(address)
-          const network = await provider.getNetwork()
-          
-          setWalletState({
-            isConnected: true,
-            address,
-            balance: ethers.formatEther(balance),
-            chainId: Number(network.chainId),
-          })
+          await updateWalletInfo()
         }
-      } catch (err) {
-        console.error('Error checking wallet connection:', err)
+      } catch (error) {
+        console.error('Error checking connection:', error)
       }
     }
   }
 
   const connectWallet = async () => {
-    if (!window.ethereum) {
-      setError('MetaMask is not installed. Please install MetaMask to continue.')
+    if (typeof window === 'undefined' || !window.ethereum) {
+      alert('MetaMask is required to use this application. Please install MetaMask.')
       return
     }
 
     setIsConnecting(true)
-    setError(null)
 
     try {
-      // Request account access
       await window.ethereum.request({ method: 'eth_requestAccounts' })
-      
-      const provider = new ethers.BrowserProvider(window.ethereum)
-      const signer = await provider.getSigner()
-      const address = await signer.getAddress()
-      const balance = await provider.getBalance(address)
-      const network = await provider.getNetwork()
-
-      setWalletState({
-        isConnected: true,
-        address,
-        balance: ethers.formatEther(balance),
-        chainId: Number(network.chainId),
-      })
-
-      // Listen for account changes
-      window.ethereum.on('accountsChanged', handleAccountsChanged)
-      window.ethereum.on('chainChanged', handleChainChanged)
-      
-    } catch (err: any) {
-      setError(err.message || 'Failed to connect wallet')
+      await updateWalletInfo()
+    } catch (error) {
+      console.error('Error connecting wallet:', error)
+      alert('Failed to connect wallet. Please try again.')
     } finally {
       setIsConnecting(false)
     }
@@ -86,80 +80,76 @@ export default function WalletConnector() {
       isConnected: false,
       address: null,
       balance: null,
-      chainId: null,
+      chainId: null
     })
-    
-    // Remove event listeners
-    if (window.ethereum) {
-      window.ethereum.removeListener('accountsChanged', handleAccountsChanged)
-      window.ethereum.removeListener('chainChanged', handleChainChanged)
+  }
+
+  const updateWalletInfo = async () => {
+    if (typeof window !== 'undefined' && window.ethereum) {
+      try {
+        const address = await getCurrentWalletAddress()
+        const balance = await getWalletBalance()
+        const chainId = await window.ethereum.request({ method: 'eth_chainId' })
+
+        setWalletState({
+          isConnected: true,
+          address,
+          balance,
+          chainId: parseInt(chainId, 16)
+        })
+      } catch (error) {
+        console.error('Error updating wallet info:', error)
+      }
     }
   }
 
-  const handleAccountsChanged = (accounts: string[]) => {
-    if (accounts.length === 0) {
-      disconnectWallet()
-    } else {
-      checkWalletConnection()
-    }
-  }
-
-  const handleChainChanged = () => {
-    checkWalletConnection()
-  }
-
-  const truncateAddress = (address: string) => {
+  const formatAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`
   }
 
-  const getChainName = (chainId: number) => {
-    switch (chainId) {
-      case 1:
-        return 'Ethereum Mainnet'
-      case 11155111:
-        return 'Sepolia Testnet'
-      case 5:
-        return 'Goerli Testnet'
-      default:
-        return `Chain ID: ${chainId}`
-    }
+  const formatBalance = (balance: string) => {
+    return parseFloat(balance).toFixed(4)
   }
 
-  if (walletState.isConnected) {
+  if (walletState.isConnected && walletState.address) {
     return (
       <div className="card max-w-md mx-auto">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-green-400">✅ Wallet Connected</h3>
+          <div className="flex items-center space-x-3">
+            <div className="w-3 h-3 bg-success rounded-full"></div>
+            <span className="text-sm font-medium">Wallet Connected</span>
+          </div>
           <button
             onClick={disconnectWallet}
-            className="text-sm text-red-400 hover:text-red-300 transition-colors"
+            className="btn-secondary text-sm px-3 py-1"
           >
             Disconnect
           </button>
         </div>
-        
+
         <div className="space-y-3">
           <div>
-            <label className="label text-xs text-slate-400">Address</label>
-            <div className="eth-address text-sm bg-slate-800 rounded px-2 py-1">
-              {walletState.address}
+            <label className="label text-xs">Address</label>
+            <div className="eth-address bg-slate-800 rounded px-3 py-2 text-sm">
+              {formatAddress(walletState.address)}
             </div>
           </div>
-          
-          <div className="grid grid-cols-2 gap-3">
+
+          {walletState.balance && (
             <div>
-              <label className="label text-xs text-slate-400">Balance</label>
-              <div className="text-sm">
-                {walletState.balance ? `${parseFloat(walletState.balance).toFixed(4)} ETH` : '0 ETH'}
+              <label className="label text-xs">Balance</label>
+              <div className="text-lg font-semibold">
+                {formatBalance(walletState.balance)} ETH
               </div>
             </div>
+          )}
+
+          {walletState.chainId && (
             <div>
-              <label className="label text-xs text-slate-400">Network</label>
-              <div className="text-sm">
-                {walletState.chainId ? getChainName(walletState.chainId) : 'Unknown'}
-              </div>
+              <label className="label text-xs">Chain ID</label>
+              <div className="text-sm">{walletState.chainId}</div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     )
@@ -167,47 +157,40 @@ export default function WalletConnector() {
 
   return (
     <div className="card max-w-md mx-auto text-center">
-      <div className="mb-4">
-        <div className="w-16 h-16 bg-gradient-to-r from-orange-400 to-orange-600 rounded-full flex items-center justify-center mx-auto mb-4">
-          <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 2L2 7v10c0 5.55 3.84 9.74 9 11 5.16-1.26 9-5.45 9-11V7l-10-5z"/>
-          </svg>
-        </div>
-        <h3 className="text-lg font-semibold mb-2">Connect Your Wallet</h3>
-        <p className="text-sm text-slate-400 mb-4">
-          Connect your MetaMask wallet to start creating sessions and sending tips
-        </p>
+      <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+        <svg className="w-8 h-8 text-accent" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M17.778 8.222c-4.296-4.296-11.26-4.296-15.556 0A1 1 0 01.808 6.808c5.076-5.077 13.308-5.077 18.384 0a1 1 0 01-1.414 1.414zM14.95 11.05a7 7 0 00-9.9 0 1 1 0 01-1.414-1.414 9 9 0 0112.728 0 1 1 0 01-1.414 1.414zM12.12 13.88a3 3 0 00-4.242 0 1 1 0 01-1.415-1.415 5 5 0 017.072 0 1 1 0 01-1.415 1.415zM9 16a1 1 0 112 0 1 1 0 01-2 0z" clipRule="evenodd" />
+        </svg>
       </div>
 
-      {error && (
-        <div className="bg-red-900/20 border border-red-500/50 rounded-lg p-3 mb-4">
-          <p className="text-red-400 text-sm">{error}</p>
-        </div>
-      )}
+      <h3 className="text-xl font-bold mb-2">Connect Your Wallet</h3>
+      <p className="text-slate-400 mb-6">
+        Connect your MetaMask wallet to create sessions and send tips
+      </p>
 
       <button
         onClick={connectWallet}
         disabled={isConnecting}
-        className="btn btn-primary w-full"
+        className="btn-primary w-full"
       >
         {isConnecting ? (
-          <div className="flex items-center justify-center space-x-2">
-            <div className="spinner"></div>
-            <span>Connecting...</span>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center space-x-2">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2L2 7v10c0 5.55 3.84 9.74 9 11 5.16-1.26 9-5.45 9-11V7l-10-5z"/>
+          <>
+            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-            <span>Connect MetaMask</span>
-          </div>
+            Connecting...
+          </>
+        ) : (
+          'Connect MetaMask'
         )}
       </button>
 
-      <p className="text-xs text-slate-500 mt-2">
-        Don't have MetaMask? <a href="https://metamask.io" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Install it here</a>
-      </p>
+      {typeof window !== 'undefined' && !window.ethereum && (
+        <div className="mt-4 p-3 bg-warning/10 border border-warning/20 rounded text-warning text-sm">
+          <p>⚠️ MetaMask not detected. <a href="https://metamask.io/" target="_blank" rel="noopener noreferrer" className="underline">Install MetaMask</a> to continue.</p>
+        </div>
+      )}
     </div>
   )
 }
