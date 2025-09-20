@@ -155,6 +155,6 @@ export function isTip(obj: CosmicObject): obj is Tip {
 }
 
 // Utility types with proper constraint
-export type OptionalMetadata<T extends { metadata: any }> = Partial<T['metadata']>;
+export type OptionalMetadata<T extends CosmicObject> = Partial<T['metadata']>;
 export type CreateSessionData = Omit<AttendanceSession, 'id' | 'created_at' | 'modified_at'>;
 export type CreateTipData = Omit<Tip, 'id' | 'created_at' | 'modified_at'>;

@@ -36,7 +36,7 @@ export default function TipForm() {
 
     try {
       // Check if wallet is connected
-      const accounts = await window.ethereum.request({ method: 'eth_accounts' })
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' }) as string[]
       if (accounts.length === 0) {
         throw new Error('Please connect your wallet first')
       }

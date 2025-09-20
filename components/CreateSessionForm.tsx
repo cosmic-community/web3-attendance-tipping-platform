@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { createSessionOnChain } from '@/lib/contract'
+import { createAttendanceSessionOnChain } from '@/lib/contract'
 import { createAttendanceSession, updateSessionWithBlockchainData } from '@/lib/cosmic'
 import type { CreateSessionFormData, TransactionStatus } from '@/types'
 
@@ -10,9 +10,7 @@ export default function CreateSessionForm() {
     sessionName: '',
     description: ''
   })
-  const [txStatus, setTxStatus] = useState<TransactionStatus>({
-    status: 'idle'
-  })
+  const [txStatus, setTxStatus] = useState<TransactionStatus>({ status: 'idle' })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -31,45 +29,41 @@ export default function CreateSessionForm() {
     setTxStatus({ status: 'pending', message: 'Creating session...' })
 
     try {
-      // Get current wallet address
-      const accounts = await window.ethereum.request({ method: 'eth_accounts' })
+      // Check if wallet is connected
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' }) as string[]
       if (accounts.length === 0) {
         throw new Error('Please connect your wallet first')
       }
 
       const creatorAddress = accounts[0]
 
-      // First, create the session in Cosmic CMS
+      // First create in Cosmic CMS
       const cosmicSession = await createAttendanceSession(
         formData.sessionName,
         creatorAddress,
         formData.description
       )
 
-      setTxStatus({ status: 'pending', message: 'Creating blockchain transaction...' })
+      // Then create on blockchain
+      const blockchainResult = await createAttendanceSessionOnChain(formData.sessionName)
 
-      // Then create the session on the blockchain
-      const blockchainResult = await createSessionOnChain(formData.sessionName)
-
-      // Update the Cosmic session with blockchain data
-      if (blockchainResult.sessionId && cosmicSession.id) {
-        await updateSessionWithBlockchainData(
-          cosmicSession.id,
-          blockchainResult.sessionId,
-          blockchainResult.transactionHash
-        )
-      }
+      // Update Cosmic session with blockchain data
+      await updateSessionWithBlockchainData(
+        cosmicSession.id,
+        blockchainResult.sessionId,
+        blockchainResult.transactionHash
+      )
 
       setTxStatus({
         status: 'success',
-        message: 'Session created successfully!',
+        message: `Session created successfully! Session ID: ${blockchainResult.sessionId}`,
         hash: blockchainResult.transactionHash
       })
 
       // Reset form
       setFormData({ sessionName: '', description: '' })
 
-      // Auto-clear success message after 5 seconds
+      // Auto-clear success message
       setTimeout(() => {
         setTxStatus({ status: 'idle' })
       }, 5000)
@@ -85,16 +79,16 @@ export default function CreateSessionForm() {
 
   const getStatusColor = () => {
     switch (txStatus.status) {
-      case 'pending': return 'text-warning'
-      case 'success': return 'text-success'
-      case 'error': return 'text-error'
+      case 'pending': return 'text-warning bg-warning/10'
+      case 'success': return 'text-success bg-success/10'
+      case 'error': return 'text-error bg-error/10'
       default: return ''
     }
   }
 
   return (
     <section className="card">
-      <h2 className="text-2xl font-bold mb-4">Create New Session</h2>
+      <h2 className="text-2xl font-bold mb-4">Create Session</h2>
       
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
@@ -104,19 +98,19 @@ export default function CreateSessionForm() {
             value={formData.sessionName}
             onChange={(e) => setFormData(prev => ({ ...prev, sessionName: e.target.value }))}
             className="input"
-            placeholder="e.g., Web3 Development Workshop"
+            placeholder="Web3 Development Workshop"
             required
           />
         </div>
 
         <div>
-          <label className="label">Description (Optional)</label>
+          <label className="label">Description</label>
           <textarea
             value={formData.description}
             onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-            className="input min-h-[100px] resize-y"
-            placeholder="Describe what this session is about..."
-            rows={4}
+            className="input resize-none"
+            placeholder="Brief description of the session..."
+            rows={3}
           />
         </div>
 
@@ -134,7 +128,7 @@ export default function CreateSessionForm() {
               Creating Session...
             </>
           ) : (
-            'Create Session'
+            '✨ Create Session'
           )}
         </button>
 
@@ -152,11 +146,12 @@ export default function CreateSessionForm() {
       </form>
 
       <div className="mt-6 p-4 bg-slate-800 rounded text-sm">
-        <h4 className="font-semibold mb-2">💡 How it works:</h4>
+        <h4 className="font-semibold mb-2">📋 Session Guidelines:</h4>
         <ul className="space-y-1 text-slate-300 text-xs">
-          <li>• Session data is stored both on-chain and in our CMS</li>
-          <li>• A small gas fee is required for blockchain transaction</li>
-          <li>• Others can mark attendance and send tips to your session</li>
+          <li>• Sessions are recorded on the blockchain for transparency</li>
+          <li>• Each session gets a unique ID for attendance tracking</li>
+          <li>• Gas fees are required for blockchain transactions</li>
+          <li>• Session creators can manage attendance and receive tips</li>
         </ul>
       </div>
     </section>
