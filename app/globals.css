@@ -1,0 +1,148 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 15 23 42; /* slate-900 */
+    --foreground: 248 250 252; /* slate-50 */
+    --border: 30 41 59; /* slate-800 */
+    --primary: 99 102 241; /* indigo-500 */
+    --primary-foreground: 255 255 255;
+    --secondary: 226 232 240; /* slate-200 */
+    --secondary-foreground: 30 41 59; /* slate-800 */
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply bg-primary text-primary-foreground hover:bg-primary-dark focus:ring-primary;
+  }
+
+  .btn-secondary {
+    @apply bg-secondary text-secondary-foreground hover:bg-slate-300 focus:ring-secondary;
+  }
+
+  .btn-outline {
+    @apply border border-border bg-transparent hover:bg-card focus:ring-primary;
+  }
+
+  .card {
+    @apply bg-card text-card-foreground rounded-lg border border-border p-6 shadow-sm;
+  }
+
+  .input {
+    @apply flex w-full rounded-lg border border-border bg-transparent px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .label {
+    @apply text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70;
+  }
+
+  .status-badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .status-active {
+    @apply bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200;
+  }
+
+  .status-pending {
+    @apply bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200;
+  }
+
+  .status-closed {
+    @apply bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200;
+  }
+
+  .status-confirmed {
+    @apply bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200;
+  }
+
+  .status-failed {
+    @apply bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .animate-pulse-slow {
+    animation: pulse 3s ease-in-out infinite;
+  }
+
+  .gradient-text {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
+
+/* Custom scrollbar styles */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary));
+}
+
+/* Loading spinner */
+.spinner {
+  border: 2px solid hsl(var(--border));
+  border-top: 2px solid hsl(var(--primary));
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Ethereum address styling */
+.eth-address {
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 0.875rem;
+  letter-spacing: -0.025em;
+}
+
+/* Transaction hash styling */
+.tx-hash {
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 0.75rem;
+  letter-spacing: -0.025em;
+  word-break: break-all;
+}
